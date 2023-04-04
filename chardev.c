@@ -159,6 +159,6 @@ static ssize_t device_write(struct file *filp,
    size_t len,
    loff_t *off)
 {
-   printk ("<1>Sorry, this operation isn't supported.\n");
+   printk("chardev: Sorry, this operation isn't supported.\n");
    return -EINVAL;
 }
