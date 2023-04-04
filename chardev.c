@@ -8,6 +8,7 @@
  */
 
 /* Kernel Programming */
+#include <linux/device.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/fs.h>
@@ -23,16 +24,24 @@ static ssize_t device_read(struct file *, char *, size_t, loff_t *);
 static ssize_t device_write(struct file *, const char *, size_t, loff_t *);
 
 #define SUCCESS 0
-#define DEVICE_NAME "chardev" /* Dev name as it appears in /proc/devices   */
+#define DEVICE_NAME "hello"   /* device name as it appears in /proc/devices */
+#define CLASS_NAME "chardev"  /* device class */
 #define BUF_LEN 80            /* Max length of the message from the device */
 
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("A simple char device");
+MODULE_VERSION("0.1");
 
 /* Global variables are declared as static, so are global within the file. */
 
-static int Major;            /* Major number assigned to our device driver */
+static int majorNumber;                  /* Major number assigned to our device driver */
+static struct class*  charClass  = NULL; /* Class struct pointer */
+static struct device* charDevice = NULL; /* Device struct pointer */
+
+static int counter = 0;      /* counts the number of opens */
 static int Device_Open = 0;  /* Is device open?  Used to prevent multiple
                                         access to the device */
-static char msg[BUF_LEN];    /* The msg the device will give when asked    */
+static char msg[BUF_LEN];    /* The msg the device will give when asked */
 static char *msg_Ptr;
 
 static struct file_operations fops = {
@@ -47,19 +56,31 @@ static struct file_operations fops = {
 
 int init_module(void)
 {
-   Major = register_chrdev(0, DEVICE_NAME, &fops);
+   majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
+   if (majorNumber < 0) {
+     printk("Registering the character device failed with %d\n", majorNumber);
+     return majorNumber;
+   }
+   printk("chardev: assigned major number %d\n", majorNumber);
 
-   if (Major < 0) {
-     printk ("Registering the character device failed with %d\n", Major);
-     return Major;
+   charClass = class_create(THIS_MODULE, CLASS_NAME);
+   if (IS_ERR(charClass)){
+      unregister_chrdev(majorNumber, DEVICE_NAME);
+      printk("chardev: Failed to register device class\n");
+      return PTR_ERR(charClass);
+   }
+   printk("chardev: device class registered successfully\n");
+
+   charDevice = device_create(charClass, NULL, MKDEV(majorNumber, 0), NULL, DEVICE_NAME);
+   if (IS_ERR(charDevice)){
+      class_destroy(charClass);
+      unregister_chrdev(majorNumber, DEVICE_NAME);
+      printk("chardev: Failed to create the device\n");
+      return PTR_ERR(charDevice);
    }
 
-   printk("<1>I was assigned major number %d.  To talk to\n", Major);
-   printk("<1>the driver, create a dev file with\n");
-   printk("'mknod /dev/hello c %d 0'.\n", Major);
-   printk("<1>Try various minor numbers.  Try to cat and echo to\n");
-   printk("the device file.\n");
-   printk("<1>Remove the device file and module when done.\n");
+   printk("chardev: device created correctly\n");
+   printk("chardev: try to cat and echo to /dev/hello\n");
 
    return 0;
 }
@@ -68,7 +89,10 @@ int init_module(void)
 void cleanup_module(void)
 {
    /* Unregister the device */
-   unregister_chrdev(Major, DEVICE_NAME);
+   device_destroy(charClass, MKDEV(majorNumber, 0));
+   class_unregister(charClass);
+   class_destroy(charClass);
+   unregister_chrdev(majorNumber, DEVICE_NAME);
 }
 
 
@@ -79,7 +103,6 @@ void cleanup_module(void)
  */
 static int device_open(struct inode *inode, struct file *file)
 {
-   static int counter = 0;
    if (Device_Open) return -EBUSY;
 
    Device_Open++;
@@ -139,5 +162,3 @@ static ssize_t device_write(struct file *filp,
    printk ("<1>Sorry, this operation isn't supported.\n");
    return -EINVAL;
 }
-
-MODULE_LICENSE("GPL");

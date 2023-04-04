@@ -1,0 +1,2 @@
+#Rules file for the chardev device driver
+KERNEL=="hello", SUBSYSTEM=="chardev", MODE="0666"
